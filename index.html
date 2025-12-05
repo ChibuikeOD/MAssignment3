@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Author Network</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+    <h1>Author Network</h1>
+    <p><strong>Nodes:</strong> Authors | <strong>Links:</strong> Shared Publications</p>
+    <p>Authors: <span id="n-nodes">0</span> | Links: <span id="n-links">0</span></p>
+    
+    <fieldset>
+        <legend>Force Parameters</legend>
+        <p>
+            <label>forceManyBody (Charge): 
+                <input type="range" id="charge" min="-200" max="-10" value="-50" step="5">
+                <span id="v-charge">-50</span>
+            </label>
+        </p>
+        <p>
+            <label>forceCollide (Radius): 
+                <input type="range" id="collide" min="1" max="30" value="5" step="1">
+                <span id="v-collide">5</span>
+            </label>
+        </p>
+        <p>
+            <label>Link Strength: 
+                <input type="range" id="strength" min="0.1" max="2" value="0.5" step="0.1">
+                <span id="v-strength">0.5</span>
+            </label>
+        </p>
+    </fieldset>
+
+    <svg id="svg" width="1000" height="600" style="border:1px solid black"></svg>
+
+    <script>
+        const svg = d3.select('#svg');
+        const w = +svg.attr('width');
+        const h = +svg.attr('height');
+        const g = svg.append('g');
+
+        svg.call(d3.zoom().scaleExtent([0.1, 5]).on('zoom', e => g.attr('transform', e.transform)));
+
+        // Node size scale based on degree (d3.scaleSqrt with range [3, 12])
+        const r = d3.scaleSqrt().range([3, 12]);
+
+        let sim;
+
+        d3.json('author_network.json').then(data => {
+            const nodes = data.nodes;
+            const links = data.links;
+
+            document.getElementById('n-nodes').textContent = nodes.length;
+            document.getElementById('n-links').textContent = links.length;
+
+            r.domain(d3.extent(nodes, d => d.degree));
+
+            // Force simulation
+            sim = d3.forceSimulation(nodes)
+                .force('link', d3.forceLink(links).id(d => d.id).strength(0.5))
+                .force('charge', d3.forceManyBody().strength(-50))
+                .force('center', d3.forceCenter(w / 2, h / 2))
+                .force('collision', d3.forceCollide().radius(d => r(d.degree) + 5))
+                .force('x', d3.forceX(w / 2).strength(0.05))
+                .force('y', d3.forceY(h / 2).strength(0.05));
+
+            // Links
+            const link = g.append('g')
+                .selectAll('line')
+                .data(links)
+                .join('line')
+                .attr('stroke', '#999')
+                .attr('stroke-opacity', 0.6)
+                .attr('stroke-width', d => Math.sqrt(d.value));
+
+            // Nodes
+            const node = g.append('g')
+                .selectAll('circle')
+                .data(nodes)
+                .join('circle')
+                .attr('r', d => r(d.degree))
+                .attr('fill', '#69b3a2')
+                .attr('stroke', '#fff')
+                .attr('stroke-width', 1.5)
+                .call(d3.drag()
+                    .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+                    .on('drag', (e, d) => { d.fx = e.x; d.fy = e.y; })
+                    .on('end', (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; }));
+
+            node.append('title').text(d => d.name || d.id);
+
+            sim.on('tick', () => {
+                link
+                    .attr('x1', d => d.source.x)
+                    .attr('y1', d => d.source.y)
+                    .attr('x2', d => d.target.x)
+                    .attr('y2', d => d.target.y);
+                node
+                    .attr('cx', d => d.x)
+                    .attr('cy', d => d.y);
+            });
+        });
+
+        // UI Controls
+        document.getElementById('charge').oninput = function() {
+            document.getElementById('v-charge').textContent = this.value;
+            sim.force('charge').strength(+this.value);
+            sim.alpha(0.5).restart();
+        };
+
+        document.getElementById('collide').oninput = function() {
+            const val = +this.value;
+            document.getElementById('v-collide').textContent = val;
+            sim.force('collision').radius(d => r(d.degree) + val);
+            sim.alpha(0.5).restart();
+        };
+
+        document.getElementById('strength').oninput = function() {
+            document.getElementById('v-strength').textContent = this.value;
+            sim.force('link').strength(+this.value);
+            sim.alpha(0.5).restart();
+        };
+    </script>
+</body>
+</html>
